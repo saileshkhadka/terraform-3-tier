@@ -1,0 +1,39 @@
+version: 0.2
+
+phases:
+  install:
+    commands:
+      - echo "Retrieving SSH key from Parameter Store"
+      - aws ssm get-parameter --name "/ec2/keypair/dev-partneraX-api/private-key" --with-decryption --query "Parameter.Value" --output text --region eu-west-1 > /tmp/dev-partneraX-api.pem
+      - chmod 400 /tmp/dev-partneraX-api.pem
+      - echo "Setting up SSH for deployment"
+      - ssh-keyscan -H 10.0.1.225 >> ~/.ssh/known_hosts
+      - ssh-keyscan -H 18.201.16.182 >> ~/.ssh/known_hosts
+
+  build:
+    commands:
+      - echo "Setting up SSH tunnel through bastion host"
+      - ssh -i /tmp/dev-partneraX-api.pem -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -N -L 2222:10.0.1.225:22 ubuntu@18.201.16.182 &
+      - sleep 10
+
+
+      - echo "Creating directory on the private EC2"
+      - ssh -i /tmp/dev-partneraX-api.pem -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@localhost 'sudo mkdir -p /var/www/html/partneraXap1 && sudo chmod -R 755 /var/www/html/partneraXap1/ && sudo chown -R ubuntu:ubuntu /var/www/html/partneraXap1/'
+
+
+      - echo "Copying source code to the private EC2"
+      # Use SCP to copy files over the tunnel
+      - rsync -avz -e "ssh -i /tmp/dev-partneraX-api.pem -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" $CODEBUILD_SRC_DIR/ ubuntu@localhost:/var/www/html/partneraXap1
+
+
+      - echo "Setting executable permissions for deploy script on the private EC2"
+      - ssh -i /tmp/dev-partneraX-api.pem -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@localhost 'sudo chmod +x /var/www/html/partneraXap1/deploy.sh'
+
+      - echo "Running deployment commands on the private EC2"
+      - ssh -i /tmp/dev-partneraX-api.pem -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@localhost 'bash /var/www/html/partneraXap1/deploy.sh'
+      - ssh -i /tmp/dev-partneraX-api.pem -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@localhost 'sudo rm -rf /var/www/html/partneraXap1/deploy.sh'
+      
+
+  post_build:
+    commands:
+      - echo "Deployment complete"

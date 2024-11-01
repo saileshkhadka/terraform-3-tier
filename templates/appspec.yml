@@ -1,0 +1,11 @@
+version: 0.0
+os: linux
+files:
+  - source: /
+    destination: /var/www/html/partneraXap1
+file_exists_behavior: OVERWRITE
+hooks:
+  ApplicationStart:
+    - location: testscript/deploy.sh
+      timeout: 3600
+      runas: root
